@@ -7,6 +7,7 @@ import { ChatLogger } from "../src/core/chat-log";
 import { runChatLog } from "../src/cli/log";
 import { runCli, type CliDeps } from "../src/cli/run";
 import { Database } from "bun:sqlite";
+import { realpathSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ function fixtures(nonVoice = false) {
 }
 
 test("complete CLI dispatch to native media adapter stores actual image and voice BLOBs", async () => {
-  const f = fixtures(), root = await mkdtemp(join(tmpdir(), "mizito-log-media-"));
+  const f = fixtures(), root = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-media-"));
   const path = join(root, "archive.sqlite"), output: string[] = [];
   const deps: CliDeps = {
     chats: f.chats, watcher: () => ({ poll: async () => [] }), send: async () => {}, sendFiles: async () => {}, login: async () => {}, startMcp: async () => {}, pollIntervalMs: 1000,
@@ -67,7 +68,7 @@ test("logger adapter honors disabled gate, service/deletion scope, and supplied 
 });
 
 test("native non-voice audio is classified unsupported, not retried as a failed download", async () => {
-  const f = fixtures(true), root = await mkdtemp(join(tmpdir(), "mizito-log-nonvoice-"));
+  const f = fixtures(true), root = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-nonvoice-"));
   const logger = new ChatLogger({ path: join(root, "history.sqlite"), source: f.chats, fetchMedia: createChatLogMediaProvider(f.chats, f.client, true) });
   try {
     const first = await logger.run({ chats: chatId, perChatLimit: 15, includeMedia: true });
@@ -78,7 +79,7 @@ test("native non-voice audio is classified unsupported, not retried as a failed 
 });
 
 test("logger cancellation reaches the native CDN request and prevents partial page persistence", async () => {
-  const f = fixtures(), root = await mkdtemp(join(tmpdir(), "mizito-log-cdn-abort-"));
+  const f = fixtures(), root = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-cdn-abort-"));
   const ac = new AbortController(); let started!: () => void; const ready = new Promise<void>(resolve => { started = resolve; });
   let networkSignal: AbortSignal | undefined;
   const client = new MizitoClient({ credentials: { username: "", password: "" }, token: "synthetic-session", fetch: (async (_url: any, init?: RequestInit) => {

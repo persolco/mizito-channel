@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { chmodSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatLogger, ChatLogError } from "../src/core/chat-log";
 import type { Chat, Message } from "../src/core/models";
@@ -10,7 +11,7 @@ const id = (n: number) => n.toString(16).padStart(24, "0");
 const chat: Chat = { id: id(1), name: "Synthetic private chat", isGroup: false, unread: 2, messagesCount: 0 };
 const msg = (n: number, extra: Partial<Message> = {}): Message => ({ sender: "Synthetic sender", id: id(n), chatId: chat.id, chatName: chat.name, index: n, from: id(2), fromMe: false, date: 123, text: "private synthetic text", mentions: [], edited: false, deleted: false, service: false, ...extra });
 function setup(messages: Message[] = []) {
-  const root = mkdtempSync(join(process.env.TMPDIR!, "chat-log-test-")); dirs.push(root);
+  const root = mkdtempSync(join(realpathSync(tmpdir()), "chat-log-test-")); dirs.push(root);
   const path = join(root, "private", "log.sqlite");
   const offsets: number[] = [];
   const source = { resolveChat: async (_ref: string, opts: { exact: true }) => { expect(opts.exact).toBe(true); return chat; }, history: async (_chat: Chat, offset: number) => { offsets.push(offset); return messages.slice(offset, offset + 15); } };

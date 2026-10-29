@@ -46,6 +46,12 @@ test("downloads a voice note to a private deterministic path", async () => {
   const home = tempRoot();
   const bytes = Buffer.from("fake-mp3-bytes");
   const { chats, calls } = fakeChats(stream(bytes), bytes.length);
+  if (process.platform !== "linux") {
+    await expect(downloadVoice(chats, {} as MizitoClient, "معین سلیمانی", messageId, home, true)).rejects.toThrow("Secure media downloads require Linux procfs");
+    expect(existsSync(join(home, "downloads"))).toBe(false);
+    expect(calls).toEqual([["معین سلیمانی", messageId, "client"]]);
+    return;
+  }
   const result = await downloadVoice(chats, {} as MizitoClient, "معین سلیمانی", messageId, home, true);
 
   expect(result).toEqual({

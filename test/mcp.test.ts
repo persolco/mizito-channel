@@ -106,6 +106,56 @@ test("list_chats returns JSON", async () => {
   expect(JSON.parse(textOf(r))[0].id).toBe("c1");
 });
 
+test("list_tasks is read-only and forwards scope, offset, and project id", async () => {
+  let seen: unknown;
+  const { client } = await connect(deps({ tasks: { listProjects: async () => [], listTasks: async (...args) => {
+    seen = args;
+    return [{ id: "t1", title: "Review", assigneeIds: [], completed: false }];
+  }, getTask: async () => { throw new Error("unexpected"); }, createTask: async () => { throw new Error("unexpected"); },
+  updateTask: async () => { throw new Error("unexpected"); }, deleteTask: async () => { throw new Error("unexpected"); },
+  setTaskCompleted: async () => { throw new Error("unexpected"); },
+  commentOnTask: async () => { throw new Error("unexpected"); } } }));
+  const tool = (await client.listTools()).tools.find((t) => t.name === "list_tasks");
+  expect(tool?.annotations?.readOnlyHint).toBe(true);
+  const result = await client.callTool({ name: "list_tasks", arguments: { scope: "project", offset: 15, project_id: "p1" } });
+  expect(seen).toEqual(["project", 15, "p1"]);
+  expect(JSON.parse(textOf(result))[0].id).toBe("t1");
+});
+
+test("task write tools are gated, annotated, and forward exact arguments", async () => {
+  const calls: unknown[] = [];
+  const tasks = {
+    listProjects: async () => [],
+    listTasks: async () => [],
+    getTask: async (id: string, project?: string) => { calls.push(["get", id, project]); return { id, title: "Task", notes: "", assigneeIds: [], completed: false, checklist: [], labelIds: [], deleted: false }; },
+    createTask: async (input: unknown) => { calls.push(["create", input]); return { id: "t1", title: "Task", assigneeIds: [], completed: false }; },
+    updateTask: async (id: string, changes: unknown, project?: string) => { calls.push(["update", id, changes, project]); return { id, title: "Task", notes: "", assigneeIds: [], completed: false, checklist: [], labelIds: [], deleted: false }; },
+    deleteTask: async (id: string, project?: string) => { calls.push(["delete", id, project]); return { deleted: true as const, taskId: id }; },
+    setTaskCompleted: async (id: string, completed: boolean, project?: string) => { calls.push(["complete", id, completed, project]); return { id, title: "Task", notes: "", assigneeIds: [], completed, checklist: [], labelIds: [], deleted: false }; },
+    commentOnTask: async (id: string, value: string, project?: string) => { calls.push(["comment", id, value, project]); return { commented: true as const, taskId: id }; },
+  } as McpDeps["tasks"];
+  const off = await connect(deps({ tasks }));
+  expect((await off.client.listTools()).tools.map((t) => t.name)).toContain("get_task");
+  expect((await off.client.listTools()).tools.map((t) => t.name)).not.toContain("create_task");
+  const { client } = await connect(deps({ tasks, allowTaskWrite: true }));
+  const tools = (await client.listTools()).tools;
+  for (const name of ["create_task", "update_task", "delete_task", "set_task_completed", "comment_on_task"]) {
+    expect(tools.find((t) => t.name === name)?.annotations?.destructiveHint).toBe(true);
+  }
+  await client.callTool({ name: "create_task", arguments: { title: "New", project_id: "p1" } });
+  await client.callTool({ name: "update_task", arguments: { task_id: "t1", title: "Changed", deadline: null, project_id: "p1" } });
+  await client.callTool({ name: "delete_task", arguments: { task_id: "t1", project_id: "p1" } });
+  await client.callTool({ name: "set_task_completed", arguments: { task_id: "t1", completed: true, project_id: "p1" } });
+  await client.callTool({ name: "comment_on_task", arguments: { task_id: "t1", text: "Hello", project_id: "p1" } });
+  expect(calls).toEqual([
+    ["create", { title: "New", projectId: "p1", notes: undefined, assigneeIds: undefined, deadline: undefined }],
+    ["update", "t1", { title: "Changed", deadline: null }, "p1"],
+    ["delete", "t1", "p1"],
+    ["complete", "t1", true, "p1"],
+    ["comment", "t1", "Hello", "p1"],
+  ]);
+});
+
 test("read_messages returns messages and passes the limit", async () => {
   let seen: unknown;
   const d = deps();

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { login as doLogin } from "../core/auth";
 import { ChatService } from "../core/chats";
+import { TaskService } from "../core/tasks";
 import { MizitoClient } from "../core/client";
 import { loadConfig } from "../core/config";
 import { PidLock } from "../core/lock";
@@ -73,6 +74,7 @@ async function main(): Promise<number> {
 
   const names = await FileNameCache.open(join(config.home, "names.json"));
   const chats = new ChatService(client, { userId: config.userId, names });
+  const tasks = new TaskService(client, config.allowTaskWrite);
   const lock = new PidLock(join(config.home, "watcher.lock"));
   process.on("exit", () => lock.release());
   const watcher = new Watcher({ chats, cursors: await CursorStore.open(join(config.home, "cursors.json")), lock });
@@ -83,6 +85,8 @@ async function main(): Promise<number> {
 
   const mcpDeps: McpDeps = {
     chats,
+    tasks,
+    allowTaskWrite: config.allowTaskWrite,
     watcher,
     send,
     sendFiles: sendLocalFiles,
@@ -99,6 +103,8 @@ async function main(): Promise<number> {
 
   return runCli(process.argv.slice(2), {
     chats,
+    tasks,
+    allowTaskWrite: config.allowTaskWrite,
     log: (args, io) => runChatLog(args, {
       source: chats, allowDownload: config.allowDownload,
       fetchMedia: createChatLogMediaProvider(chats, client, config.allowDownload),

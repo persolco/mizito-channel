@@ -61,6 +61,14 @@ MIZITO_ALLOW_DOWNLOAD=1 mizito log "Exact team name" --db "$HOME/.config/mizito/
 |---|---|
 | `mizito login` | Prompts for username/password (or uses `MIZITO_USERNAME` / `MIZITO_PASSWORD`), logs in once, saves credentials and the session token. |
 | `mizito chats [--json]` | Lists chats: id, `group`/`dm`, unread count, name. |
+| `mizito projects [--json]` | Lists project ids, titles, and member ids for task creation and assignment. |
+| `mizito tasks [mine\|following\|project\|done] [--project ID] [--offset N] [--json]` | Lists Mizito tasks. Defaults to open tasks assigned to you. Project scope requires `--project`. |
+| `mizito task-get <task-id> [--project ID] [--json]` | Reads task details by id. Use `--project` for tasks outside your own lists. |
+| `mizito task-create <project-id> <title> [--notes TEXT] [--assignee ID] [--deadline ISO]` | Creates a task. Repeat `--assignee` for multiple people; omitting it assigns the task to you. |
+| `mizito task-update <task-id> [--title TEXT] [--notes TEXT] [--deadline ISO] [--assignee ID] [--project ID] [--moveTo ID]` | Replaces the supplied fields. `--project` helps find a task; `--moveTo` moves it to another project. An empty deadline clears it. |
+| `mizito task-delete <task-id> [--project ID]` | Moves a task to Mizito's trash. |
+| `mizito task-complete <task-id> [--project ID]` / `mizito task-reopen <task-id> [--project ID]` | Marks a task done or reopens it. |
+| `mizito task-comment <task-id> <text> [--project ID]` | Adds a comment visible to task participants. |
 | `mizito read <chat> [--limit N] [--json]` | Recent messages from a chat. Text output is oldest first; `--json` is newest first. Default limit 15. |
 | `mizito search <chat> <text> [--json]` | Searches a chat's history (scans up to 20 pages of 15 messages, newest first). |
 | `mizito watch [--json]` | Streams new messages from all chats until Ctrl-C. With `--json`, one JSON object per line. |
@@ -70,6 +78,8 @@ MIZITO_ALLOW_DOWNLOAD=1 mizito log "Exact team name" --db "$HOME/.config/mizito/
 | `mizito download-audio <exact-chat> <24-lowerhex-message-id> [--json]` | Explicit gated voice-note download. |
 | `mizito download-image <exact-chat> <24-lowerhex-message-id> [--json]` | Explicit gated JPEG/PNG/WebP photo download. |
 | `mizito mcp` | Starts the stdio MCP server. |
+
+The MCP server exposes read-only `list_projects`, `list_tasks` and `get_task`. When `MIZITO_ALLOW_TASK_WRITE=1`, it also exposes `create_task`, `update_task`, `delete_task`, `set_task_completed`, and `comment_on_task`. Task access tokens stay inside the connector and are never returned. The task endpoints are part of Mizito's unofficial web API, so live behavior may change. Write operations are disabled by default and require explicit approval of the exact action in the MCP tool descriptions.
 
 **Naming a chat.** `<chat>` is a chat id or a chat name. Names are matched ignoring case, Arabic vs
 Persian letter forms (`ي`/`ی`, `ك`/`ک`, `ى`), Arabic-Indic vs Persian digits, and all spaces and ZWNJ
@@ -320,6 +330,7 @@ for API details and the observed-schema/live-validation boundary.
 | `MIZITO_USER_ID` | derived | Your own user id. Normally not needed; it is fetched automatically. |
 | `MIZITO_ALLOW_DOWNLOAD` | off | Only `1` enables explicit voice/image downloads; independent of sending. |
 | `MIZITO_ALLOW_SEND` | off | `1` enables sending. Any other value leaves it off. |
+| `MIZITO_ALLOW_TASK_WRITE` | off | Only `1` enables task creation, editing, deletion, and comments; independent of message sending. |
 | `MIZITO_PUSH` | off | `1` makes `mizito mcp` push channel notifications. Needs `MIZITO_PUSH_CHATS`. |
 | `MIZITO_PUSH_CHATS` | – | Comma-separated chat ids or exact names allowed to be pushed. |
 | `HERMES_WEBHOOK_URL` | – | Required by `hermes-watch`; HTTPS endpoint that receives Mizito batches. |

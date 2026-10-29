@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { realpathSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +12,7 @@ const chat: Chat = { id: "a".repeat(24), name: "Synthetic cancellation", isGroup
 const message: Message = { id: "b".repeat(24), chatId: chat.id, chatName: chat.name, sender: "Synthetic", from: "c".repeat(24), index: 1, date: 1, fromMe: false, text: "synthetic", mentions: [], edited: false, deleted: false, service: false };
 
 test("Ctrl-C during pending history returns immediately without later writes or source work", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mizito-log-cancel-")), path = join(root, "history.sqlite");
+  const root = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-cancel-")), path = join(root, "history.sqlite");
   const ac = new AbortController(); let reads = 0, downloads = 0, release!: (rows: Message[]) => void, started!: () => void;
   const ready = new Promise<void>(resolve => { started = resolve; });
   try {
@@ -30,7 +31,7 @@ test("Ctrl-C during pending history returns immediately without later writes or 
 });
 
 test("typed unsupported media is not recorded as failed or fetched again unchanged", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mizito-log-unsupported-")), path = join(root, "history.sqlite"); let calls = 0;
+  const root = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-unsupported-")), path = join(root, "history.sqlite"); let calls = 0;
   const logger = new ChatLogger({ path, source: { resolveChat: async () => chat, history: async () => [{ ...message, attachment: { kind: "audio" } }] }, fetchMedia: async () => { calls++; throw new ChatLogUnsupportedMedia(); } });
   try {
     const first = await logger.run({ chats: chat.id, perChatLimit: 15, includeMedia: true });
