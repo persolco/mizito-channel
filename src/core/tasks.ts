@@ -81,6 +81,14 @@ function checkedResult(value: unknown, endpoint: string): void {
   }
 }
 
+function sameDeadline(actual: string | undefined, requested: string): boolean {
+  if (actual === requested) return true;
+  if (!actual) return false;
+  const actualTime = Date.parse(actual);
+  const requestedTime = Date.parse(requested);
+  return Number.isFinite(actualTime) && Number.isFinite(requestedTime) && actualTime === requestedTime;
+}
+
 export class TaskService {
   private readonly tokens = new Map<string, string>();
 
@@ -94,9 +102,24 @@ export class TaskService {
     const raw = await this.client.post("/api/projects/getList", {});
     const parsed = z.object({ projects: z.array(z.object({
       _id: z.string().min(1), title: z.string(), members: z.array(z.string()).nullish(),
+      dialog: z.string().nullish(),
     }).loose()) }).safeParse(raw);
     if (!parsed.success) throw new SchemaError("projects/getList", "expected a list of projects");
-    return parsed.data.projects.map((project) => ({ id: project._id, title: project.title, memberIds: project.members ?? [] }));
+    const projects: TaskProject[] = [];
+    for (const project of parsed.data.projects) {
+      let memberIds = project.members;
+      if (!memberIds && project.dialog) {
+        const chat = await this.client.post("/api/chat/getFullChat", { dialog: project.dialog });
+        const detail = z.object({
+          is_project_group: z.literal(true), project_entity: z.literal(project._id),
+          participants: z.array(z.string()),
+        }).safeParse(chat);
+        if (!detail.success) throw new SchemaError("chat/getFullChat", "expected the linked project group and its participants");
+        memberIds = detail.data.participants;
+      }
+      projects.push({ id: project._id, title: project.title, memberIds: memberIds ?? [] });
+    }
+    return projects;
   }
 
   private async page(scope: TaskScope, offset: number, projectId?: string): Promise<RawTask[]> {
@@ -140,12 +163,12 @@ export class TaskService {
     ];
     for (const { scope, projectId: project } of scopes) {
       let offset = 0;
-      let previousFirst: string | undefined;
-      for (let page = 0; page < 10 && offset < 300; page++) {
+      const seenFirstIds = new Set<string>();
+      while (true) {
         const rows = await this.page(scope, offset, project);
         if (this.tokens.has(id)) return this.tokens.get(id)!;
-        if (!rows.length || rows[0]!._id === previousFirst) break;
-        previousFirst = rows[0]!._id;
+        if (!rows.length || seenFirstIds.has(rows[0]!._id)) break;
+        seenFirstIds.add(rows[0]!._id);
         offset += rows.length;
       }
     }
@@ -249,13 +272,13 @@ export class TaskService {
     const after = await this.getTask(id, changes.projectId ?? projectId);
     const sameIds = (a: string[], b: string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
     if ((changes.title !== undefined && after.title !== changes.title.trim()) ||
-        (changes.notes !== undefined && after.notes !== changes.notes) ||
+        (changes.notes !== undefined && after.notes !== htmlToText(changes.notes)) ||
         (changes.assigneeIds !== undefined && !sameIds(after.assigneeIds, changes.assigneeIds)) ||
         (changes.projectId !== undefined && after.projectId !== changes.projectId) ||
         (changes.boardId !== undefined && (after.boardId ?? null) !== changes.boardId) ||
         (changes.labelIds !== undefined && !sameIds(after.labelIds, changes.labelIds)) ||
         (changes.deadline === null && after.deadline !== undefined) ||
-        (typeof changes.deadline === "string" && !after.deadline)) {
+        (typeof changes.deadline === "string" && !sameDeadline(after.deadline, changes.deadline))) {
       throw new SchemaError("tasks/save", "saved task did not match the requested changes");
     }
     return after;

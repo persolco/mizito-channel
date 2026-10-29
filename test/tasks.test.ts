@@ -9,6 +9,30 @@ test("project listing returns ids and member ids without extra response fields",
   expect(await tasks.listProjects()).toEqual([{ id: "p1", title: "Team", memberIds: ["u1"] }]);
 });
 
+test("project listing gets members from the linked project group when the project has no members field", async () => {
+  const calls: [string, unknown][] = [];
+  const tasks = new TaskService({ post: async (path, body) => {
+    calls.push([path, body]);
+    if (path === "/api/projects/getList") return { projects: [{ _id: "p1", title: "Team", dialog: "chat1" }] };
+    if (path === "/api/chat/getFullChat") return {
+      is_project_group: true, project_entity: "p1", participants: ["owner", "member"],
+    };
+    throw new Error(`Unexpected request: ${path}`);
+  } });
+  expect(await tasks.listProjects()).toEqual([{ id: "p1", title: "Team", memberIds: ["owner", "member"] }]);
+  expect(calls).toEqual([
+    ["/api/projects/getList", {}],
+    ["/api/chat/getFullChat", { dialog: "chat1" }],
+  ]);
+});
+
+test("project listing rejects participants from an unrelated group", async () => {
+  const tasks = new TaskService({ post: async (path) => path === "/api/projects/getList"
+    ? { projects: [{ _id: "p1", title: "Team", dialog: "chat1" }] }
+    : { is_project_group: true, project_entity: "other", participants: ["u1"] } });
+  await expect(tasks.listProjects()).rejects.toBeInstanceOf(SchemaError);
+});
+
 test("task scopes use the Mizito upcoming request shapes", async () => {
   const calls: [string, unknown][] = [];
   const tasks = new TaskService({ post: async (path, body) => {
@@ -103,6 +127,67 @@ test("an ignored task edit is reported instead of claiming success", async () =>
     return true;
   } }, true);
   await expect(tasks.updateTask("t1", { title: "Changed" })).rejects.toBeInstanceOf(SchemaError);
+});
+
+test("updated HTML notes are verified as the text returned by getTask", async () => {
+  let stored = raw.notes;
+  const tasks = new TaskService({ post: async (path, body) => {
+    if (path === "/api/tasks/upcoming") return [raw];
+    if (path === "/api/tasks/get") return { ...raw, notes: stored };
+    if (path === "/api/tasks/save") stored = (body as { notes: string }).notes;
+    return true;
+  } }, true);
+  expect((await tasks.updateTask("t1", { notes: "<b>Updated</b>" })).notes).toBe("Updated");
+  expect((await tasks.updateTask("t1", { notes: "  Plain text  " })).notes).toBe("Plain text");
+});
+
+test("an ignored deadline update is reported instead of claiming success", async () => {
+  const withDeadline = { ...raw, deadline: "2026-11-01T00:00:00Z" };
+  const tasks = new TaskService({ post: async (path) => {
+    if (path === "/api/tasks/upcoming") return [withDeadline];
+    if (path === "/api/tasks/get") return withDeadline;
+    return true;
+  } }, true);
+  await expect(tasks.updateTask("t1", { deadline: "2026-12-01T00:00:00Z" })).rejects.toBeInstanceOf(SchemaError);
+});
+
+test("a deadline returned with an equivalent ISO offset verifies successfully", async () => {
+  const withDeadline = { ...raw, deadline: "2026-11-01T00:00:00Z" };
+  const tasks = new TaskService({ post: async (path) => {
+    if (path === "/api/tasks/upcoming") return [withDeadline];
+    if (path === "/api/tasks/get") return withDeadline;
+    return true;
+  } }, true);
+  expect((await tasks.updateTask("t1", { deadline: "2026-11-01T03:30:00+03:30" })).deadline).toBe(withDeadline.deadline);
+});
+
+test("task lookup reaches pages beyond the former ten-page limit", async () => {
+  const offsets: number[] = [];
+  const tasks = new TaskService({ post: async (path, body) => {
+    if (path === "/api/tasks/upcoming") {
+      const offset = (body as { from: number }).from;
+      offsets.push(offset);
+      return Array.from({ length: 15 }, (_, index) => ({
+        _id: `t${offset + index}`, title: `Task ${offset + index}`, access_token: `token${offset + index}`,
+      }));
+    }
+    if (path === "/api/tasks/get") return { _id: "t150", title: "Task 150", access_token: "token150" };
+    throw new Error(`Unexpected request: ${path}`);
+  } });
+  expect((await tasks.getTask("t150")).id).toBe("t150");
+  expect(offsets).toEqual(Array.from({ length: 11 }, (_, page) => page * 15));
+});
+
+test("task lookup stops when an endpoint repeats a previous page", async () => {
+  const offsets: number[] = [];
+  const tasks = new TaskService({ post: async (path, body) => {
+    if (path !== "/api/tasks/upcoming") throw new Error(`Unexpected request: ${path}`);
+    const offset = (body as { from: number }).from;
+    offsets.push(offset);
+    return [{ _id: offset % 2 === 0 ? "a" : "b", title: "Repeated", access_token: "token" }];
+  } });
+  await expect(tasks.getTask("missing")).rejects.toMatchObject({ code: "TASK_NOT_FOUND" });
+  expect(offsets).toHaveLength(9);
 });
 
 test("an expired task token is refreshed from the list once", async () => {
