@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { realpathSync } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +12,7 @@ afterEach(async () => { for (const d of directories.splice(0)) await rm(d, { rec
 const chat: Chat = { id: "a".repeat(24), name: "Synthetic team", isGroup: true, unread: 0, messagesCount: 1 };
 const message: Message = { id: "b".repeat(24), chatId: chat.id, chatName: chat.name, sender: "Synthetic sender", from: "c".repeat(24), fromMe: false, index: 1, date: 1234, text: "synthetic text", mentions: [], edited: false, deleted: false, service: false };
 async function fixture() {
-  const dir = await mkdtemp(join(tmpdir(), "mizito-log-cli-")); directories.push(dir);
+  const dir = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-cli-")); directories.push(dir);
   const path = join(dir, "chat.sqlite"); const out: string[] = [], err: string[] = [];
   let reads = 0;
   const source = { resolveChat: async () => chat, history: async () => { reads++; return [message]; } };

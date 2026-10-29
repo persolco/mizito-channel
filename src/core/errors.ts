@@ -35,6 +35,18 @@ export class SendDisabled extends MizitoError {
   }
 }
 
+export class TaskWriteDisabled extends MizitoError {
+  constructor() {
+    super("Task changes are disabled. Set MIZITO_ALLOW_TASK_WRITE=1 to enable them.", "TASK_WRITE_DISABLED");
+  }
+}
+
+export class TaskNotFound extends MizitoError {
+  constructor(id: string) {
+    super(`Task "${id}" was not found in the accessible task lists`, "TASK_NOT_FOUND");
+  }
+}
+
 export class DownloadDisabled extends MizitoError {
   constructor() {
     super("Media downloads are disabled. Set MIZITO_ALLOW_DOWNLOAD=1 to enable.", "DOWNLOAD_DISABLED");

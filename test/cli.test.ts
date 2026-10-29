@@ -44,6 +44,51 @@ test("chats --json prints parseable JSON", async () => {
   expect(JSON.parse(h.out.join(""))[0].id).toBe("c1");
 });
 
+test("tasks command forwards project scope and prints sanitized summaries", async () => {
+  let seen: unknown;
+  const h = harness({ tasks: { listProjects: async () => [], listTasks: async (...args) => {
+    seen = args;
+    return [{ id: "t1", title: "Review", assigneeIds: [], completed: false }];
+  }, getTask: async () => { throw new Error("unexpected"); }, createTask: async () => { throw new Error("unexpected"); },
+  updateTask: async () => { throw new Error("unexpected"); }, deleteTask: async () => { throw new Error("unexpected"); },
+  setTaskCompleted: async () => { throw new Error("unexpected"); },
+  commentOnTask: async () => { throw new Error("unexpected"); } } });
+  expect(await h.run(["tasks", "project", "--project", "p1", "--offset", "15", "--json"])).toBe(0);
+  expect(seen).toEqual(["project", 15, "p1"]);
+  expect(JSON.parse(h.out[0]!)[0].id).toBe("t1");
+  expect(await h.run(["tasks", "mine", "--offset=-1"])).toBe(64);
+});
+
+test("task write CLI commands are gated and route their arguments", async () => {
+  const calls: unknown[] = [];
+  const tasks = {
+    listProjects: async () => [],
+    listTasks: async () => [],
+    getTask: async (id: string) => ({ id, title: "Task", notes: "", assigneeIds: [], completed: false, checklist: [], labelIds: [], deleted: false }),
+    createTask: async (input: unknown) => { calls.push(["create", input]); return { id: "t1", title: "New", assigneeIds: [], completed: false }; },
+    updateTask: async (id: string, changes: unknown, project?: string) => { calls.push(["update", id, changes, project]); return { id, title: "Changed", notes: "", assigneeIds: [], completed: false, checklist: [], labelIds: [], deleted: false }; },
+    deleteTask: async (id: string, project?: string) => { calls.push(["delete", id, project]); return { deleted: true as const, taskId: id }; },
+    setTaskCompleted: async (id: string, completed: boolean, project?: string) => { calls.push(["complete", id, completed, project]); return { id, title: "Task", notes: "", assigneeIds: [], completed, checklist: [], labelIds: [], deleted: false }; },
+    commentOnTask: async (id: string, value: string, project?: string) => { calls.push(["comment", id, value, project]); return { commented: true as const, taskId: id }; },
+  } as CliDeps["tasks"];
+  const off = harness({ tasks });
+  expect(await off.run(["task-delete", "t1"])).toBe(5);
+  expect(calls).toEqual([]);
+  const h = harness({ tasks, allowTaskWrite: true });
+  expect(await h.run(["task-create", "p1", "New", "--assignee", "u1", "--notes", "Details"])).toBe(0);
+  expect(await h.run(["task-update", "t1", "--title", "Changed", "--project", "p1"])).toBe(0);
+  expect(await h.run(["task-comment", "t1", "Hello", "--project", "p1"])).toBe(0);
+  expect(await h.run(["task-complete", "t1", "--project", "p1"])).toBe(0);
+  expect(await h.run(["task-delete", "t1", "--project", "p1"])).toBe(0);
+  expect(calls).toEqual([
+    ["create", { projectId: "p1", title: "New", notes: "Details", assigneeIds: ["u1"], deadline: undefined }],
+    ["update", "t1", { title: "Changed" }, "p1"],
+    ["comment", "t1", "Hello", "p1"],
+    ["complete", "t1", true, "p1"],
+    ["delete", "t1", "p1"],
+  ]);
+});
+
 test("read prints oldest first in text mode and newest first in json mode", async () => {
   const h = harness();
   await h.run(["read", "Ata"]);

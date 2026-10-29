@@ -6,9 +6,15 @@ test("defaults", () => {
   expect(c.baseUrl).toBe("https://app.mizito.ir");
   expect(c.allowSend).toBe(false);
   expect(c.allowDownload).toBe(false);
+  expect(c.allowTaskWrite).toBe(false);
   expect(c.userId).toBeUndefined();
   expect(c.pollIntervalMs).toBe(10_000);
   expect(c.home.endsWith("/mizito")).toBe(true);
+});
+
+test("task write gate is independent and only 1 enables it", () => {
+  expect(loadConfig({ MIZITO_ALLOW_TASK_WRITE: "1" }).allowTaskWrite).toBe(true);
+  expect(loadConfig({ MIZITO_ALLOW_TASK_WRITE: "true", MIZITO_ALLOW_SEND: "1" }).allowTaskWrite).toBe(false);
 });
 
 test("MIZITO_HOME overrides the config directory", () => {

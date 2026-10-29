@@ -93,7 +93,13 @@ test("image raw header bounds reject dimension bombs", () => {
   for (const d of [[Infinity,1],[NaN,1],[0,1],[1,-1],[10000,10000]]) expect(()=>dimensions(d[0],d[1])).toThrow();
 });
 test("non-overwriting image saves are private and independent of upstream filenames", async () => {
-  const f=fixture(), h=home(); const result=await downloadImage(f.chats,f.client,"chat",id,h,true);
+  const f=fixture(), h=home();
+  if (process.platform !== "linux") {
+    await expect(downloadImage(f.chats,f.client,"chat",id,h,true)).rejects.toThrow("Secure media downloads require Linux procfs");
+    expect(existsSync(join(h,"downloads"))).toBe(false);
+    return;
+  }
+  const result=await downloadImage(f.chats,f.client,"chat",id,h,true);
   expect(result.path).toBe(join(h,"downloads",`${id}.png`)); expect(readFileSync(result.path)).toEqual(png);
   expect(statSync(result.path).mode&0o777).toBe(0o600); expect(statSync(join(h,"downloads")).mode&0o777).toBe(0o700);
   expect(JSON.stringify(result)).not.toContain(secret); expect(JSON.stringify(result)).not.toContain("secret-key");
@@ -141,8 +147,13 @@ test("JPEG and WebP binary formats validate and download with safe extensions", 
   for(const [bytes,mime,extension] of [[jpeg,"image/jpeg","jpg"],[webp,"image/webp","webp"]] as const) {
     expect(inspectImage(bytes,mime)).toEqual({width:1,height:1,extension});
     const f=fixture({bytes,mime,messages:[message({media:{_:"messageMediaPhoto",photo:{_id:"p",name:"evil",photo_large:variant({size:bytes.length})}}})]});
-    const result=await downloadImage(f.chats,f.client,"chat",id,home(),true);
-    expect(result.path).toEndWith(`.${extension}`); expect(readFileSync(result.path)).toEqual(bytes);
+    if (process.platform === "linux") {
+      const result=await downloadImage(f.chats,f.client,"chat",id,home(),true);
+      expect(result.path).toEndWith(`.${extension}`); expect(readFileSync(result.path)).toEqual(bytes);
+    } else {
+      const media = await fetchMedia(f);
+      expect(media.data).toEqual(bytes); expect(media.extension).toBe(extension);
+    }
     expect(()=>inspectImage(bytes.subarray(0,-1),mime)).toThrow();
   }
 });
@@ -166,6 +177,7 @@ test("home symlinks and destination hardlinks are refused without changing exist
 });
 
 test("directory swap after descriptor open cannot redirect chmod or write to symlink target", async () => {
+  if (process.platform !== "linux") return;
   const h=home(), target=home(), f=fixture();
   const before=statSync(target).mode, originalOpen=fsPromises.open;
   let swapped=false;

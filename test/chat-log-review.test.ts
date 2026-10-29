@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { realpathSync } from "node:fs";
 import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +11,7 @@ const roots: string[] = [];
 afterEach(async () => { for (const p of roots.splice(0)) await rm(p, { recursive: true, force: true }); });
 const chat: Chat = { id: "a".repeat(24), name: "Synthetic review", isGroup: true, unread: 0, messagesCount: 1 };
 const emptySource = { resolveChat: async () => chat, history: async () => [] as Message[] };
-async function path() { const dir = await mkdtemp(join(tmpdir(), "mizito-log-review-")); roots.push(dir); return join(dir, "history.sqlite"); }
+async function path() { const dir = await mkdtemp(join(realpathSync(tmpdir()), "mizito-log-review-")); roots.push(dir); return join(dir, "history.sqlite"); }
 
 test("unrelated version-0 and forged version-1 databases are refused without changing their bytes", async () => {
   for (const version of [0, 1]) {
